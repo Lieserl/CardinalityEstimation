@@ -19,6 +19,7 @@ def extract_features_from_query(range_query, table_stats, considered_cols):
     #           <-                   range features                    ->, <-     est features     ->
     feature = []
     # YOUR CODE HERE: extract features from query
+
     return feature
 
 
@@ -74,6 +75,7 @@ def est_AI2(train_data, test_data, table_stats, columns):
     train_est_rows, train_act_rows = [], []
     # YOUR CODE HERE: train procedure
 
+
     test_x, test_y = preprocess_queries(test_data, table_stats, columns)
     test_est_rows, test_act_rows = [], []
     # YOUR CODE HERE: test procedure
@@ -101,9 +103,9 @@ def eval_model(model, train_data, test_data, table_stats, columns):
 
 
 if __name__ == '__main__':
-    stats_json_file = './title_stats.json'
-    train_json_file = './query_train_18000.json'
-    test_json_file = './validation_2000.json'
+    stats_json_file = 'data/title_stats.json'
+    train_json_file = 'data/query_train_18000.json'
+    test_json_file = 'data/validation_2000.json'
     columns = ['kind_id', 'production_year', 'imdb_id', 'episode_of_id', 'season_nr', 'episode_nr']
     table_stats = stats.TableStats.load_from_json_file(stats_json_file, columns)
     with open(train_json_file, 'r') as f:
