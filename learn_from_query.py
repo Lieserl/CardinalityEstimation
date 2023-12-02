@@ -6,6 +6,8 @@ import json
 import torch
 import torch.nn as nn
 import statistics as stats
+import torch.utils.data
+import model
 
 
 def min_max_normalize(v, min_v, max_v):
@@ -15,26 +17,48 @@ def min_max_normalize(v, min_v, max_v):
 
 
 def extract_features_from_query(range_query, table_stats, considered_cols):
+    # 变量解释 range_query: 一个 ParsedRangeQuery 类，即将 query 中信息提取出的结果
+    # table_stats: 实际传入的是 title_stats.json 里提取出的数据
+    # considered_cols: 在这个 range_query 中需要考虑的列(描述字段)
     # feat:     [c1_begin, c1_end, c2_begin, c2_end, ... cn_begin, cn_end, AVI_sel, EBO_sel, Min_sel]
     #           <-                   range features                    ->, <-     est features     ->
     feature = []
     # YOUR CODE HERE: extract features from query
+    for col in considered_cols:
+        min_val = table_stats.columns[col].min_val()
+        max_val = table_stats.columns[col].max_val()
+        (left, right) = range_query.column_range(col, min_val, max_val)
+        norm_left = min_max_normalize(left, min_val, max_val)
+        norm_right = min_max_normalize(right, min_val, max_val)
+        feature.extend([norm_left, norm_right])
+
+    # 理论上需要引入 considered_cols 但实际上传参时默认全部列都考虑，所以就可以省略
+    avi_sel = stats.AVIEstimator.estimate(range_query, table_stats)
+    ebo_sel = stats.ExpBackoffEstimator.estimate(range_query, table_stats)
+    min_sel = stats.MinSelEstimator.estimate(range_query, table_stats)
+
+    feature.extend([avi_sel, ebo_sel, min_sel])
 
     return feature
 
 
-def preprocess_queries(queris, table_stats, columns):
+def preprocess_queries(queries, table_stats, columns):
     """
     preprocess_queries turn queries into features and labels, which are used for regression model.
     """
     features, labels = [], []
-    for item in queris:
+    for item in queries:
         query, act_rows = item['query'], item['act_rows']
         feature, label = None, None
         # YOUR CODE HERE: transform (query, act_rows) to (feature, label)
         # Some functions like rq.ParsedRangeQuery.parse_range_query and extract_features_from_query may be helpful.
+        range_query = rq.ParsedRangeQuery.parse_range_query(query)
+        feature = extract_features_from_query(range_query, table_stats, columns)
+        label = act_rows
         features.append(feature)
         labels.append(label)
+
+    features = np.array(features)
     return features, labels
 
 
@@ -59,10 +83,62 @@ def est_AI1(train_data, test_data, table_stats, columns):
     train_est_rows, train_act_rows = [], []
     # YOUR CODE HERE: train procedure
 
+    if (torch.cuda.is_available()):
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    model1 = model.Model1(num_i=15, num_h=100, output=1)
+    model1 = model1.to(device)
+
+    loss_fn = nn.MSELoss().to(device)
+
+    learning_rate = 1e-1
+    optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
+
+    epoch = 300
+    for i in range(epoch):
+        step = 0
+        ave_loss = 0
+        for data in train_loader:
+            feature, label = data
+            feature = feature.float()
+            feature = feature.to(device)
+            outputs = model1(feature)
+            outputs = outputs.squeeze(1)
+            loss = loss_fn(outputs, label.float())
+            ave_loss += loss.item()
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model1.parameters(), max_norm=1)
+            optimizer.step()
+
+            step += 1
+        print("epoch {}, loss {}".format(i, ave_loss / step))
+
+            #inputs = torch.Tensor(feature)
+           # print(inputs.shape)
+           # outputs = model1(inputs)
+
+
+        #print("epoch {}: loss {}", format(i), format(loss.item()))
+
     test_dataset = QueryDataset(test_data, table_stats, columns)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=True, num_workers=1)
     test_est_rows, test_act_rows = [], []
     # YOUR CODE HERE: test procedure
+    tot_loss = 0
+  #  with torch.no_grad():
+     #   for data in test_loader:
+      #      feature, label = data
+     #       tgt = torch.Tensor(label)
+       #     inputs = torch.Tensor(feature)
+      #      outputs = model1(inputs)
+       #     test_est_rows.append(outputs)
+      #      loss = loss_fn(outputs, tgt)
+      #      tot_loss = tot_loss + loss
+    #print(tot_loss)
 
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
@@ -84,7 +160,7 @@ def est_AI2(train_data, test_data, table_stats, columns):
 
 
 def eval_model(model, train_data, test_data, table_stats, columns):
-    if model == 'ai1':
+    if model == 'AI1':
         est_fn = est_AI1
     else:
         est_fn = est_AI2
@@ -113,5 +189,5 @@ if __name__ == '__main__':
     with open(test_json_file, 'r') as f:
         test_data = json.load(f)
 
-    eval_model('your_ai_model1', train_data, test_data, table_stats, columns)
-    eval_model('your_ai_model2', train_data, test_data, table_stats, columns)
+    eval_model('AI1', train_data, test_data, table_stats, columns)
+    #eval_model('AI1', train_data, test_data, table_stats, columns)

@@ -3,8 +3,9 @@ import json
 import math
 import struct
 
-MIN_VAL = int(-2**64)
-MAX_VAL = int(2**64)
+MIN_VAL = int(-2 ** 64)
+MAX_VAL = int(2 ** 64)
+
 
 class TableStats:
     @staticmethod
@@ -19,7 +20,7 @@ class TableStats:
         tbl_stats.db_name = json_data['database_name']
         tbl_stats.table_name = json_data['table_name']
         tbl_stats.row_count = json_data['count']
-        assert(int(json_data['modify_count']) == 0)  # the stats is fresh
+        assert (int(json_data['modify_count']) == 0)  # the stats is fresh
         columns = json_data['columns']
         for col_name in int_col_names:  # only consider int column stats
             tbl_stats.columns[col_name] = ColumnStats.load_from_json(columns[col_name], index=False)
@@ -180,7 +181,7 @@ class Histogram:
     def max_val(self):
         if len(self.buckets) == 0:
             return MIN_VAL
-        return self.buckets[len(self.buckets)-1].upper_bound
+        return self.buckets[len(self.buckets) - 1].upper_bound
 
     @staticmethod
     def construct_from(vals, n_buckets=10):
@@ -190,19 +191,19 @@ class Histogram:
             n_per_bucket = 1
         buckets = []
         for val in vals:
-            if len(buckets) == 0: # create the first bucket
+            if len(buckets) == 0:  # create the first bucket
                 buckets.append(Bucket(1, val, val, 1))
                 continue
-            last_bucket = buckets[len(buckets)-1]
-            if last_bucket.upper_bound == val: # val is euqal to last bucket's upper boundary
+            last_bucket = buckets[len(buckets) - 1]
+            if last_bucket.upper_bound == val:  # val is euqal to last bucket's upper boundary
                 last_bucket.row_count += 1
                 last_bucket.repeats += 1
-            elif last_bucket.row_count < n_per_bucket: # put this value into last bucket
+            elif last_bucket.row_count < n_per_bucket:  # put this value into last bucket
                 last_bucket.row_count += 1
                 last_bucket.upper_bound = val
                 last_bucket.repeats = 1
-            else: # create a new bucket
-                buckets.append(Bucket(last_bucket.row_count+1, val, val, 1))
+            else:  # create a new bucket
+                buckets.append(Bucket(last_bucket.row_count + 1, val, val, 1))
         hist = Histogram()
         hist.buckets = buckets
         return hist
@@ -268,6 +269,7 @@ class AVIEstimator:
     Attribute Value Independence (AVI): It assumes that values for different columns were chosen independent of each other.
     Under this assumption, the combined selectivity for predicates is calculated as sel(col_1) * sel(col_2) ... * sel(col_n).
     """
+
     @staticmethod
     def estimate(range_query, table_stats):
         sel = 1.0
@@ -275,7 +277,7 @@ class AVIEstimator:
             min_val = table_stats.columns[col].min_val()
             max_val = table_stats.columns[col].max_val()
             (left, right) = range_query.column_range(col, min_val, max_val)
-            col_cnt = table_stats.columns[col].between_row_count(left+1, right)  # (left, right) -> [left, right)
+            col_cnt = table_stats.columns[col].between_row_count(left + 1, right)  # (left, right) -> [left, right)
             col_sel = col_cnt / table_stats.row_count
             sel *= col_sel
         return sel
@@ -289,6 +291,7 @@ class ExpBackoffEstimator:
         s(1) * s(2)^(1/2) * s(3)^(1/4) * s(4)^(1/8),
     where s(k) represents k-th most selective fraction across all predicates.
     """
+
     @staticmethod
     def estimate(range_query, table_stats):
         # YOUR CODE HERE
@@ -301,22 +304,22 @@ class ExpBackoffEstimator:
             col_sel = col_cnt / table_stats.row_count
             sels.append(col_sel)
 
-            sels.sort()
+        sels.sort()
 
-            tot_sel = 1.0
-            for i, sel in enumerate(sels):
-                if i >= 4:
-                    break
-                tot_sel *= sel ** (1.0 / 2 ** i)
+        tot_sel = 1.0
+        for i, sel in enumerate(sels):
+            if i >= 4:
+                break
+            tot_sel *= sel ** (1.0 / 2 ** i)
 
         return tot_sel
-
 
 
 class MinSelEstimator:
     """
     MinimumSel: returns the combined selectivity as the minimum selectivity across individual predicates
     """
+
     @staticmethod
     def estimate(range_query, table_stats):
         min_sel = MAX_VAL
@@ -330,4 +333,3 @@ class MinSelEstimator:
                 min_sel = col_sel
 
         return min_sel if min_sel != MAX_VAL else 1.0
-
