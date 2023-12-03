@@ -79,21 +79,22 @@ def est_AI1(train_data, test_data, table_stats, columns):
     produce estimated rows for train_data and test_data
     """
     train_dataset = QueryDataset(train_data, table_stats, columns)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=10, shuffle=True, num_workers=1)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=90, shuffle=True, num_workers=1)
     train_est_rows, train_act_rows = [], []
     # YOUR CODE HERE: train procedure
 
-    if (torch.cuda.is_available()):
+    if torch.cuda.is_available():
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
 
-    model1 = model.Model1(num_i=15, num_h=100, output=1)
+    model1 = model.Model1(num_i=15, num_h=120, output=1)
     model1 = model1.to(device)
 
-    loss_fn = nn.MSELoss().to(device)
+    loss_fn = model.MSELoss()
+    loss_fn = loss_fn.to(device)
 
-    learning_rate = 1e-1
+    learning_rate = 1e-3
     optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
 
     epoch = 300
@@ -101,12 +102,15 @@ def est_AI1(train_data, test_data, table_stats, columns):
         step = 0
         ave_loss = 0
         for data in train_loader:
-            feature, label = data
-            feature = feature.float()
-            feature = feature.to(device)
-            outputs = model1(feature)
-            outputs = outputs.squeeze(1)
-            loss = loss_fn(outputs, label.float())
+            features, act_rows = data
+            features = features.to(device)
+            act_rows = act_rows.to(device)
+            features = features.float()
+            est_rows = torch.abs(model1(features))
+            # (act_rows, est_rows)
+
+            q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+            loss = loss_fn(q_error.float())
             ave_loss += loss.item()
 
             optimizer.zero_grad()
@@ -114,31 +118,31 @@ def est_AI1(train_data, test_data, table_stats, columns):
             torch.nn.utils.clip_grad_norm_(model1.parameters(), max_norm=1)
             optimizer.step()
 
-            step += 1
-        print("epoch {}, loss {}".format(i, ave_loss / step))
+            step = step + 1
 
-            #inputs = torch.Tensor(feature)
-           # print(inputs.shape)
-           # outputs = model1(inputs)
-
-
-        #print("epoch {}: loss {}", format(i), format(loss.item()))
+        print("epoch {}, loss {}".format(i + 1, ave_loss / step))
 
     test_dataset = QueryDataset(test_data, table_stats, columns)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=True, num_workers=1)
     test_est_rows, test_act_rows = [], []
     # YOUR CODE HERE: test procedure
     tot_loss = 0
-  #  with torch.no_grad():
-     #   for data in test_loader:
-      #      feature, label = data
-     #       tgt = torch.Tensor(label)
-       #     inputs = torch.Tensor(feature)
-      #      outputs = model1(inputs)
-       #     test_est_rows.append(outputs)
-      #      loss = loss_fn(outputs, tgt)
-      #      tot_loss = tot_loss + loss
-    #print(tot_loss)
+    with torch.no_grad():
+        step = 0
+        for data in test_loader:
+            features, act_rows = data
+            features = features.to(device)
+            act_rows = act_rows.to(device)
+            features = features.float()
+            est_rows = torch.abs(model1(features))
+            for i in range(10):
+                test_est_rows.append(est_rows[i].item())
+            q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+            loss = loss_fn(q_error.float())
+            tot_loss = tot_loss + loss.item()
+
+            step = step + 1
+        print("step {}, loss {}".format(step, tot_loss / step))
 
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
