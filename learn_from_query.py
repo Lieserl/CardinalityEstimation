@@ -74,7 +74,7 @@ class QueryDataset(torch.utils.data.Dataset):
         return len(self.query_data)
 
 
-def est_AI1(train_data, test_data, table_stats, columns):
+def est_ai1(train_data, test_data, table_stats, columns):
     """
     produce estimated rows for train_data and test_data
     """
@@ -88,7 +88,7 @@ def est_AI1(train_data, test_data, table_stats, columns):
     else:
         device = torch.device("cpu")
 
-    model1 = model.Model1(num_i=15, num_h=120, output=1)
+    model1 = model.Model1(num_i=15, num_h=100, output=1)
     model1 = model1.to(device)
 
     loss_fn = model.MSELoss()
@@ -107,7 +107,6 @@ def est_AI1(train_data, test_data, table_stats, columns):
             act_rows = act_rows.to(device)
             features = features.float()
             est_rows = torch.abs(model1(features))
-            # (act_rows, est_rows)
 
             q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
             loss = loss_fn(q_error.float())
@@ -137,6 +136,7 @@ def est_AI1(train_data, test_data, table_stats, columns):
             est_rows = torch.abs(model1(features))
             for i in range(10):
                 test_est_rows.append(est_rows[i].item())
+                test_act_rows.append(act_rows[i].item())
             q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
             loss = loss_fn(q_error.float())
             tot_loss = tot_loss + loss.item()
@@ -147,7 +147,7 @@ def est_AI1(train_data, test_data, table_stats, columns):
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
 
-def est_AI2(train_data, test_data, table_stats, columns):
+def est_ai2(train_data, test_data, table_stats, columns):
     """
     produce estimated rows for train_data and test_data
     """
@@ -164,17 +164,17 @@ def est_AI2(train_data, test_data, table_stats, columns):
 
 
 def eval_model(model, train_data, test_data, table_stats, columns):
-    if model == 'AI1':
-        est_fn = est_AI1
+    if model == 'mlp':
+        est_fn = est_ai1
     else:
-        est_fn = est_AI2
+        est_fn = est_ai2
 
     train_est_rows, train_act_rows, test_est_rows, test_act_rows = est_fn(train_data, test_data, table_stats, columns)
 
-    name = f'{model}_train_{len(train_data)}'
-    eval_utils.draw_act_est_figure(name, train_act_rows, train_est_rows)
-    p50, p80, p90, p99 = eval_utils.cal_p_error_distribution(train_act_rows, train_est_rows)
-    print(f'{name}, p50:{p50}, p80:{p80}, p90:{p90}, p99:{p99}')
+    # name = f'{model}_train_{len(train_data)}'
+    # eval_utils.draw_act_est_figure(name, train_act_rows, train_est_rows)
+    # p50, p80, p90, p99 = eval_utils.cal_p_error_distribution(train_act_rows, train_est_rows)
+    # print(f'{name}, p50:{p50}, p80:{p80}, p90:{p90}, p99:{p99}')
 
     name = f'{model}_test_{len(test_data)}'
     eval_utils.draw_act_est_figure(name, test_act_rows, test_est_rows)
@@ -193,5 +193,5 @@ if __name__ == '__main__':
     with open(test_json_file, 'r') as f:
         test_data = json.load(f)
 
-    eval_model('AI1', train_data, test_data, table_stats, columns)
+    eval_model('mlp', train_data, test_data, table_stats, columns)
     #eval_model('AI1', train_data, test_data, table_stats, columns)
