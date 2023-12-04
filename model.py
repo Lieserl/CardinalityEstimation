@@ -4,14 +4,14 @@ import torch.nn as nn
 
 
 class Model1(nn.Module):
-    def __init__(self, num_i, num_h, output):
+    def __init__(self, num_input, para_1, para_2, num_output):
         super(Model1, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(num_i, num_h),
+            nn.Linear(num_input, para_1),
             nn.ReLU(),
-            nn.Linear(num_h, 50),
+            nn.Linear(para_1, para_2),
             nn.ReLU(),
-            nn.Linear(50, output),
+            nn.Linear(para_2, num_output),
         )
 
     def forward(self, src):

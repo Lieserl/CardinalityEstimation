@@ -88,7 +88,7 @@ def est_ai1(train_data, test_data, table_stats, columns):
     else:
         device = torch.device("cpu")
 
-    model1 = model.Model1(num_i=15, num_h=100, output=1)
+    model1 = model.Model1(num_input=15, para_1=100, para_2=50, num_output=1)
     model1 = model1.to(device)
 
     loss_fn = model.MSELoss()
