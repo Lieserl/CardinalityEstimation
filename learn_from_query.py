@@ -79,7 +79,7 @@ def est_ai1(train_data, test_data, table_stats, columns):
     produce estimated rows for train_data and test_data
     """
     train_dataset = QueryDataset(train_data, table_stats, columns)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=90, shuffle=True, num_workers=1)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
     train_est_rows, train_act_rows = [], []
     # YOUR CODE HERE: train procedure
 
@@ -88,16 +88,20 @@ def est_ai1(train_data, test_data, table_stats, columns):
     else:
         device = torch.device("cpu")
 
-    model1 = model.Model1(num_input=15, para_1=100, para_2=50, num_output=1)
+    # model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1)
+    model1 = model.Model1(num_input=15, para_1=50, para_2=10, para_3=10, num_output=1)
     model1 = model1.to(device)
 
     loss_fn = model.MSELoss()
     loss_fn = loss_fn.to(device)
 
-    learning_rate = 1e-3
-    optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
+    # learning_rate = 1e-2
+    # optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
 
-    epoch = 300
+    learning_rate = 1e-2
+    optimizer = torch.optim.SGD(model1.parameters(), lr=learning_rate)
+
+    epoch = 400
     for i in range(epoch):
         step = 0
         ave_loss = 0
@@ -108,7 +112,12 @@ def est_ai1(train_data, test_data, table_stats, columns):
             features = features.float()
             est_rows = torch.abs(model1(features))
 
-            q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+            act = torch.maximum(act_rows, est_rows)
+            est = torch.minimum(act_rows, est_rows)
+            est = torch.where(est == 0, 1.0, est)
+            q_error = torch.div(act, est)
+            # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+
             loss = loss_fn(q_error.float())
             ave_loss += loss.item()
 
@@ -137,7 +146,14 @@ def est_ai1(train_data, test_data, table_stats, columns):
             for i in range(10):
                 test_est_rows.append(est_rows[i].item())
                 test_act_rows.append(act_rows[i].item())
-            q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+
+            act = torch.maximum(act_rows, est_rows)
+            est = torch.minimum(act_rows, est_rows)
+            est = torch.where(est == 0, 1.0, est)
+            q_error = torch.div(act, est)
+
+            # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+
             loss = loss_fn(q_error.float())
             tot_loss = tot_loss + loss.item()
 
@@ -194,4 +210,4 @@ if __name__ == '__main__':
         test_data = json.load(f)
 
     eval_model('mlp', train_data, test_data, table_stats, columns)
-    #eval_model('AI1', train_data, test_data, table_stats, columns)
+    # eval_model('AI1', train_data, test_data, table_stats, columns)
