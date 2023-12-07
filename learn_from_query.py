@@ -88,20 +88,16 @@ def est_ai1(train_data, test_data, table_stats, columns):
     else:
         device = torch.device("cpu")
 
-    # model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1)
-    model1 = model.Model1(num_input=15, para_1=50, para_2=10, para_3=10, num_output=1)
+    model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1)
     model1 = model1.to(device)
 
     loss_fn = model.MSELoss()
     loss_fn = loss_fn.to(device)
 
-    # learning_rate = 1e-2
-    # optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
-
     learning_rate = 1e-2
-    optimizer = torch.optim.SGD(model1.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
 
-    epoch = 400
+    epoch = 500
     for i in range(epoch):
         step = 0
         ave_loss = 0
@@ -165,22 +161,91 @@ def est_ai1(train_data, test_data, table_stats, columns):
 
 def est_ai2(train_data, test_data, table_stats, columns):
     """
-    produce estimated rows for train_data and test_data
-    """
-    train_x, train_y = preprocess_queries(train_data, table_stats, columns)
+        produce estimated rows for train_data and test_data
+        """
+    train_dataset = QueryDataset(train_data, table_stats, columns)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
     train_est_rows, train_act_rows = [], []
     # YOUR CODE HERE: train procedure
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
-    test_x, test_y = preprocess_queries(test_data, table_stats, columns)
+    model2 = model.Model2(num_input=15, para_1=100, para_2=50, para_3=50, num_output=1)
+    model2 = model2.to(device)
+
+    loss_fn = model.MSELoss()
+    loss_fn = loss_fn.to(device)
+
+    learning_rate = 3e-2
+    optimizer = torch.optim.SGD(model2.parameters(), lr=learning_rate)
+
+    epoch = 300
+    for i in range(epoch):
+        step = 0
+        ave_loss = 0
+        for data in train_loader:
+            features, act_rows = data
+            features = features.to(device)
+            act_rows = act_rows.to(device)
+            features = features.float()
+            est_rows = torch.abs(model2(features))
+
+            act = torch.maximum(act_rows, est_rows)
+            est = torch.minimum(act_rows, est_rows)
+            est = torch.where(est == 0, 1.0, est)
+            q_error = torch.div(act, est)
+            # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+
+            loss = loss_fn(q_error.float())
+            ave_loss += loss.item()
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model2.parameters(), max_norm=1)
+            optimizer.step()
+
+            step = step + 1
+
+        print("epoch {}, loss {}".format(i + 1, ave_loss / step))
+
+    test_dataset = QueryDataset(test_data, table_stats, columns)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=True, num_workers=1)
     test_est_rows, test_act_rows = [], []
     # YOUR CODE HERE: test procedure
+    tot_loss = 0
+    with torch.no_grad():
+        step = 0
+        for data in test_loader:
+            features, act_rows = data
+            features = features.to(device)
+            act_rows = act_rows.to(device)
+            features = features.float()
+            est_rows = torch.abs(model2(features))
+            for i in range(10):
+                test_est_rows.append(est_rows[i].item())
+                test_act_rows.append(act_rows[i].item())
+
+            act = torch.maximum(act_rows, est_rows)
+            est = torch.minimum(act_rows, est_rows)
+            est = torch.where(est == 0, 1.0, est)
+            q_error = torch.div(act, est)
+
+            # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
+
+            loss = loss_fn(q_error.float())
+            tot_loss = tot_loss + loss.item()
+
+            step = step + 1
+        print("step {}, loss {}".format(step, tot_loss / step))
 
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
 
 def eval_model(model, train_data, test_data, table_stats, columns):
-    if model == 'mlp':
+    if model == 'mlp_adam':
         est_fn = est_ai1
     else:
         est_fn = est_ai2
@@ -209,5 +274,5 @@ if __name__ == '__main__':
     with open(test_json_file, 'r') as f:
         test_data = json.load(f)
 
-    eval_model('mlp', train_data, test_data, table_stats, columns)
-    # eval_model('AI1', train_data, test_data, table_stats, columns)
+    # eval_model('mlp_adam', train_data, test_data, table_stats, columns)
+    eval_model('mlp_sgd', train_data, test_data, table_stats, columns)

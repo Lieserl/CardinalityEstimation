@@ -21,6 +21,24 @@ class Model1(nn.Module):
         return src[:, 0]
 
 
+class Model2(nn.Module):
+    def __init__(self, num_input, para_1, para_2, para_3, num_output):
+        super(Model2, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(num_input, para_1),
+            nn.ReLU(),
+            nn.Linear(para_1, para_2),
+            nn.ReLU(),
+            nn.Linear(para_2, para_3),
+            nn.ReLU(),
+            nn.Linear(para_3, num_output),
+        )
+
+    def forward(self, src):
+        src = self.model(src)
+        return src[:, 0]
+
+
 class MSELoss(nn.Module):
     def __init__(self):
         super(MSELoss, self).__init__()
