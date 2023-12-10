@@ -163,17 +163,17 @@ def est_ai1(data_set, table_stats, columns):
     """
     produce estimated rows for train_data and test_data
     """
-    data = list(zip(*preprocess_queries(data_set, table_stats, columns)))
-    kFold = KFold(n_splits=10)
+    _data = list(zip(*preprocess_queries(data_set, table_stats, columns)))
+    kfold = KFold(n_splits=10)
 
     train_est_rows, train_act_rows = [], []
     test_est_rows, test_act_rows = [], []
 
-    for fold, (train_idx, test_idx) in enumerate(kFold.split(data)):
+    for fold, (train_idx, test_idx) in enumerate(kfold.split(_data)):
         print("Fold: {}".format(fold + 1))
 
-        train_set = [data[i] for i in train_idx]
-        test_set = [data[i] for i in test_idx]
+        train_set = [_data[i] for i in train_idx]
+        test_set = [_data[i] for i in test_idx]
 
         train_dataset = QueryDataset(train_set)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
@@ -182,11 +182,9 @@ def est_ai1(data_set, table_stats, columns):
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1)
-        model1 = model1.to(device)
+        model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1).to(device)
 
-        loss_fn = model.MSELoss()
-        loss_fn = loss_fn.to(device)
+        loss_fn = model.MSELoss().to(device)
 
         learning_rate = 1e-2
         optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
@@ -199,8 +197,7 @@ def est_ai1(data_set, table_stats, columns):
                 features, act_rows = data
                 features = features.to(device)
                 act_rows = act_rows.to(device)
-                features = features.float()
-                est_rows = torch.abs(model1(features))
+                est_rows = torch.abs(model1(features.float()))
 
                 act = torch.maximum(act_rows, est_rows)
                 est = torch.minimum(act_rows, est_rows)
@@ -231,8 +228,8 @@ def est_ai1(data_set, table_stats, columns):
                 features, act_rows = data
                 features = features.to(device)
                 act_rows = act_rows.to(device)
-                features = features.float()
-                est_rows = torch.abs(model1(features))
+                est_rows = torch.abs(model1(features.float()))
+
                 for i in range(10):
                     test_est_rows.append(est_rows[i].item())
                     test_act_rows.append(act_rows[i].item())
