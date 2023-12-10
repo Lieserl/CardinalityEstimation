@@ -1,5 +1,5 @@
 [
-               {
+	{
 		"query": "select * from imdb.title where production_year>1900 and production_year<2019  and episode_of_id>0 and episode_of_id<2528185  and season_nr>0 and season_nr<59 ",
 		"act_rows": 1018264
 	},
