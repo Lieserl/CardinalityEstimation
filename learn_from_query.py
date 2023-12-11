@@ -1,10 +1,15 @@
+import numpy
+
 import evaluation_utils as eval_utils
 import matplotlib.pyplot as plt
 import numpy as np
 import range_query as rq
 import json
 import torch
-import torch.nn as nn
+import sklearn
+import skorch
+from skorch import NeuralNetRegressor
+from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold
 import statistics as stats
 import torch.utils.data
@@ -59,7 +64,7 @@ def preprocess_queries(queries, table_stats, columns):
         features.append(feature)
         labels.append(label)
 
-    features = np.array(features)
+    features = np.float32(np.array(features))
     return features, labels
 
 
@@ -74,91 +79,6 @@ class QueryDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.query_data)
 
-
-# def est_ai1(train_data, test_data, table_stats, columns):
-#     """
-#     produce estimated rows for train_data and test_data
-#     """
-#     train_dataset = QueryDataset(train_data, table_stats, columns)
-#     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
-#     train_est_rows, train_act_rows = [], []
-#     # YOUR CODE HERE: train procedure
-#
-#     if torch.cuda.is_available():
-#         device = torch.device("cuda")
-#     else:
-#         device = torch.device("cpu")
-#
-#     model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1)
-#     model1 = model1.to(device)
-#
-#     loss_fn = model.MSELoss()
-#     loss_fn = loss_fn.to(device)
-#
-#     learning_rate = 1e-2
-#     optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
-#
-#     epoch = 500
-#     for i in range(epoch):
-#         step = 0
-#         ave_loss = 0
-#         for data in train_loader:
-#             features, act_rows = data
-#             features = features.to(device)
-#             act_rows = act_rows.to(device)
-#             features = features.float()
-#             est_rows = torch.abs(model1(features))
-#
-#             act = torch.maximum(act_rows, est_rows)
-#             est = torch.minimum(act_rows, est_rows)
-#             est = torch.where(est == 0, 1.0, est)
-#             q_error = torch.div(act, est)
-#             # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-#
-#             loss = loss_fn(q_error.float())
-#             ave_loss += loss.item()
-#
-#             optimizer.zero_grad()
-#             loss.backward()
-#             torch.nn.utils.clip_grad_norm_(model1.parameters(), max_norm=1)
-#             optimizer.step()
-#
-#             step = step + 1
-#
-#         print("epoch {}, loss {}".format(i + 1, ave_loss / step))
-#
-#     test_dataset = QueryDataset(test_data, table_stats, columns)
-#     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=True, num_workers=1)
-#     test_est_rows, test_act_rows = [], []
-#     # YOUR CODE HERE: test procedure
-#     tot_loss = 0
-#     with torch.no_grad():
-#         step = 0
-#         for data in test_loader:
-#             features, act_rows = data
-#             features = features.to(device)
-#             act_rows = act_rows.to(device)
-#             features = features.float()
-#             est_rows = torch.abs(model1(features))
-#             for i in range(10):
-#                 test_est_rows.append(est_rows[i].item())
-#                 test_act_rows.append(act_rows[i].item())
-#
-#             act = torch.maximum(act_rows, est_rows)
-#             est = torch.minimum(act_rows, est_rows)
-#             est = torch.where(est == 0, 1.0, est)
-#             q_error = torch.div(act, est)
-#
-#             # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-#
-#             loss = loss_fn(q_error.float())
-#             tot_loss = tot_loss + loss.item()
-#
-#             step = step + 1
-#         print("step {}, loss {}".format(step, tot_loss / step))
-#
-#     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
-
 def est_ai1(data_set, table_stats, columns):
     """
     produce estimated rows for train_data and test_data
@@ -172,6 +92,16 @@ def est_ai1(data_set, table_stats, columns):
     _loss = []
     min_train_loss = []
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1).to(device)
+
+    loss_fn = model.MSELoss().to(device)
+
+    learning_rate = 1e-2
+
+    optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
+
     for fold, (train_idx, test_idx) in enumerate(kfold.split(_data)):
         print("Fold: {}".format(fold + 1))
 
@@ -182,15 +112,6 @@ def est_ai1(data_set, table_stats, columns):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
 
         # YOUR CODE HERE: train procedure
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        model1 = model.Model1(num_input=15, para_1=100, para_2=30, para_3=50, num_output=1).to(device)
-
-        loss_fn = model.MSELoss().to(device)
-
-        learning_rate = 1e-2
-        optimizer = torch.optim.Adam(model1.parameters(), lr=learning_rate)
 
         epoch = 300
         min_loss = 1e5
@@ -203,13 +124,7 @@ def est_ai1(data_set, table_stats, columns):
                 act_rows = act_rows.to(device)
                 est_rows = torch.abs(model1(features.float()))
 
-                act = torch.maximum(act_rows, est_rows)
-                est = torch.minimum(act_rows, est_rows)
-                est = torch.where(est == 0, 1.0, est)
-                q_error = torch.div(act, est)
-                # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-
-                loss = loss_fn(q_error.float())
+                loss = loss_fn(est_rows, act_rows)
                 ave_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -218,8 +133,10 @@ def est_ai1(data_set, table_stats, columns):
                 optimizer.step()
 
                 step = step + 1
+
             min_loss = min_loss if (min_loss < ave_loss / step) else (ave_loss / step)
             print("epoch {}, loss {}".format(i + 1, ave_loss / step))
+
         min_train_loss.append(min_loss)
 
         test_dataset = QueryDataset(test_set)
@@ -239,15 +156,8 @@ def est_ai1(data_set, table_stats, columns):
                     test_est_rows.append(est_rows[i].item())
                     test_act_rows.append(act_rows[i].item())
 
-                act = torch.maximum(act_rows, est_rows)
-                est = torch.minimum(act_rows, est_rows)
-                est = torch.where(est == 0, 1.0, est)
-                q_error = torch.div(act, est)
-
-                # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-
-                loss = loss_fn(q_error.float())
-                tot_loss = tot_loss + loss.item()
+                loss = loss_fn(act_rows, est_rows)
+                tot_loss += loss.item()
 
                 step = step + 1
 
@@ -272,6 +182,16 @@ def est_ai2(data_set, table_stats, columns):
     _loss = []
     min_train_loss = []
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model2 = model.Model2(num_input=15, para_1=100, para_2=50, para_3=50, num_output=1).to(device)
+
+    loss_fn = model.MSELoss().to(device)
+
+    learning_rate = 3e-2
+
+    optimizer = torch.optim.SGD(model2.parameters(), lr=learning_rate)
+
     for fold, (train_idx, test_idx) in enumerate(kfold.split(_data)):
         print("Fold: {}".format(fold + 1))
 
@@ -282,15 +202,6 @@ def est_ai2(data_set, table_stats, columns):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=1)
 
         # YOUR CODE HERE: train procedure
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        model2 = model.Model2(num_input=15, para_1=100, para_2=50, para_3=50, num_output=1).to(device)
-
-        loss_fn = model.MSELoss().to(device)
-
-        learning_rate = 3e-2
-        optimizer = torch.optim.SGD(model2.parameters(), lr=learning_rate)
 
         epoch = 300
         min_loss = 1e5
@@ -303,13 +214,7 @@ def est_ai2(data_set, table_stats, columns):
                 act_rows = act_rows.to(device)
                 est_rows = torch.abs(model2(features.float()))
 
-                act = torch.maximum(act_rows, est_rows)
-                est = torch.minimum(act_rows, est_rows)
-                est = torch.where(est == 0, 1.0, est)
-                q_error = torch.div(act, est)
-                # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-
-                loss = loss_fn(q_error.float())
+                loss = loss_fn(est_rows, act_rows)
                 ave_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -324,7 +229,7 @@ def est_ai2(data_set, table_stats, columns):
 
         min_train_loss.append(min_loss)
 
-        test_dataset = QueryDataset(test_data, table_stats, columns)
+        test_dataset = QueryDataset(test_set)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=True, num_workers=1)
         test_est_rows, test_act_rows = [], []
         # YOUR CODE HERE: test procedure
@@ -335,26 +240,87 @@ def est_ai2(data_set, table_stats, columns):
                 features, act_rows = data
                 features = features.to(device)
                 act_rows = act_rows.to(device)
-                features = features.float()
-                est_rows = torch.abs(model2(features))
+                est_rows = torch.abs(model2(features.float()))
+
                 for i in range(10):
                     test_est_rows.append(est_rows[i].item())
                     test_act_rows.append(act_rows[i].item())
 
-                act = torch.maximum(act_rows, est_rows)
-                est = torch.minimum(act_rows, est_rows)
-                est = torch.where(est == 0, 1.0, est)
-                q_error = torch.div(act, est)
-
-                # q_error = torch.max(torch.div(act_rows, est_rows), torch.div(est_rows, act_rows))
-
-                loss = loss_fn(q_error.float())
-                tot_loss = tot_loss + loss.item()
+                loss = loss_fn(act_rows, est_rows)
+                tot_loss += loss.item()
 
                 step = step + 1
             print("step {}, loss {}".format(step, tot_loss / step))
 
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
+
+
+def mse_loss(est_rows, act_rows):
+    est_rows = est_rows.float()
+    act_rows = torch.from_numpy(act_rows)
+    act = torch.maximum(act_rows, est_rows)
+    est = torch.minimum(act_rows, est_rows)
+    est = torch.where(est == 0, 1.0, est)
+    q_error = torch.div(act, est)
+
+    loss = torch.pow(q_error, 2)
+    loss = torch.mean(loss)
+
+    return loss.float().numpy()
+
+class GradientClipping(skorch.callbacks.Callback):
+    def __init__(self, gradient_clip_value=1):
+        self.gradient_clip_value = gradient_clip_value
+
+    def on_grad_computed(self, net, named_parameters, **kwargs):
+        torch.nn.utils.clip_grad_norm_(net.module_.parameters(), self.gradient_clip_value)
+
+
+
+def grid_search(data_set, table_stats, columns):
+    """
+    produce estimated rows for train_data and test_data
+    """
+
+    kfold = KFold(n_splits=10, shuffle=True)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model2 = NeuralNetRegressor(module=model.Model2,
+                                criterion=model.MSELoss,
+                                optimizer=torch.optim.SGD,
+                                device=device,
+                                module__num_input=15,
+                                module__num_output=1,
+                                callbacks=[GradientClipping(gradient_clip_value=1)]
+                            )
+
+    param_grid = {
+        'batch_size': [64],
+        'max_epochs': [20],
+        'optimizer__lr': [1e-2],
+        'optimizer__momentum': [0.8],
+        'module__para_1': [100],
+        'module__para_2': [50],
+        'module__para_3': [50]
+    }
+
+    features, targets = preprocess_queries(data_set, table_stats, columns)
+    targets = numpy.float32(numpy.array(targets))
+    features = torch.from_numpy(features)
+    targets = torch.from_numpy(targets)
+
+    grid = GridSearchCV(estimator=model2, param_grid=param_grid)
+    grid_result = grid.fit(features, targets)
+
+    # print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+    # means = grid_result.cv_results_['mean_test_score']
+    # stds = grid_result.cv_results_['std_test_score']
+    # params = grid_result.cv_results_['params']
+    # for mean, stdev, param in zip(means, stds, params):
+    #     print("%f (%f) with: %r" % (mean, stdev, param))
+
+
 
 
 def eval_model(model, data_set, table_stats, columns):
@@ -390,5 +356,6 @@ if __name__ == '__main__':
     with open(kfold_json_file, 'r') as f:
         kfold_data = json.load(f)
 
-    eval_model('mlp_adam', kfold_data, table_stats, columns)
+    grid_search(kfold_data, table_stats, columns)
+    # eval_model('mlp_adam', kfold_data, table_stats, columns)
     # eval_model('mlp_sgd', kfold_data, table_stats, columns)

@@ -43,7 +43,15 @@ class MSELoss(nn.Module):
     def __init__(self):
         super(MSELoss, self).__init__()
 
-    def forward(self, q_error):
+    def forward(self, est_rows, act_rows):
+        est_rows = torch.abs(est_rows)
+        act = torch.maximum(act_rows, est_rows)
+        est = torch.minimum(act_rows, est_rows)
+        est = torch.where(est == 0, 1.0, est)
+        q_error = torch.div(act, est)
+
         loss = torch.pow(q_error, 2)
         loss = torch.mean(loss)
         return loss.float()
+
+
