@@ -19,7 +19,7 @@ import model
 def min_max_normalize(v, min_v, max_v):
     # The function may be useful when dealing with lower/upper bounds of columns.
     assert max_v > min_v
-    return (v-min_v)/(max_v-min_v)
+    return (v - min_v) / (max_v - min_v)
 
 
 def extract_features_from_query(range_query, table_stats, considered_cols):
@@ -78,6 +78,7 @@ class QueryDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.query_data)
+
 
 def est_ai1(data_set, table_stats, columns):
     """
@@ -169,6 +170,7 @@ def est_ai1(data_set, table_stats, columns):
 
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
+
 def est_ai2(data_set, table_stats, columns):
     """
     produce estimated rows for train_data and test_data
@@ -255,9 +257,10 @@ def est_ai2(data_set, table_stats, columns):
     return train_est_rows, train_act_rows, test_est_rows, test_act_rows
 
 
-def mse_loss(est_rows, act_rows):
-    est_rows = est_rows.float()
-    act_rows = torch.from_numpy(act_rows)
+def mse_loss(estimator, features, act_rows):
+    est_rows = estimator.predict(features)
+    est_rows = torch.from_numpy(est_rows).float()
+    # act_rows = torch.from_numpy(act_rows)
     act = torch.maximum(act_rows, est_rows)
     est = torch.minimum(act_rows, est_rows)
     est = torch.where(est == 0, 1.0, est)
@@ -266,7 +269,10 @@ def mse_loss(est_rows, act_rows):
     loss = torch.pow(q_error, 2)
     loss = torch.mean(loss)
 
-    return loss.float().numpy()
+    print(loss)
+
+    return -loss.float().numpy()
+
 
 class GradientClipping(skorch.callbacks.Callback):
     def __init__(self, gradient_clip_value=1):
@@ -274,7 +280,6 @@ class GradientClipping(skorch.callbacks.Callback):
 
     def on_grad_computed(self, net, named_parameters, **kwargs):
         torch.nn.utils.clip_grad_norm_(net.module_.parameters(), self.gradient_clip_value)
-
 
 
 def grid_search(data_set, table_stats, columns):
@@ -293,16 +298,16 @@ def grid_search(data_set, table_stats, columns):
                                 module__num_input=15,
                                 module__num_output=1,
                                 callbacks=[GradientClipping(gradient_clip_value=1)]
-                            )
+                                )
 
     param_grid = {
-        'batch_size': [64],
-        'max_epochs': [20],
-        'optimizer__lr': [1e-2],
-        'optimizer__momentum': [0.8],
-        'module__para_1': [100],
-        'module__para_2': [50],
-        'module__para_3': [50]
+        'batch_size': [8, 16, 32, 64],
+        'max_epochs': [200, 300],
+        'optimizer__lr': [1e-2, 5e-2, 1e-1],
+        'optimizer__momentum': [0.7, 0.8, 0.9],
+        'module__para_1': [80, 90, 100, 110, 120],
+        'module__para_2': [20, 30, 40, 50, 60, 70, 80, 90, 100],
+        'module__para_3': [10, 20, 30, 40, 50, 60]
     }
 
     features, targets = preprocess_queries(data_set, table_stats, columns)
@@ -310,17 +315,15 @@ def grid_search(data_set, table_stats, columns):
     features = torch.from_numpy(features)
     targets = torch.from_numpy(targets)
 
-    grid = GridSearchCV(estimator=model2, param_grid=param_grid)
+    grid = GridSearchCV(estimator=model2, param_grid=param_grid, cv=10, scoring=mse_loss)
     grid_result = grid.fit(features, targets)
 
-    # print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
-    # means = grid_result.cv_results_['mean_test_score']
-    # stds = grid_result.cv_results_['std_test_score']
-    # params = grid_result.cv_results_['params']
-    # for mean, stdev, param in zip(means, stds, params):
-    #     print("%f (%f) with: %r" % (mean, stdev, param))
-
-
+    print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+    means = grid_result.cv_results_['mean_test_score']
+    stds = grid_result.cv_results_['std_test_score']
+    params = grid_result.cv_results_['params']
+    for mean, stdev, param in zip(means, stds, params):
+        print("%f (%f) with: %r" % (mean, stdev, param))
 
 
 def eval_model(model, data_set, table_stats, columns):
